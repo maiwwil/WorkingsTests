@@ -4,15 +4,35 @@
 
 package frc.robot;
 
+import edu.wpi.first.wpilibj.DutyCycle;
+import edu.wpi.first.wpilibj.DutyCycleEncoder;
+import edu.wpi.first.wpilibj.PneumaticsModuleType;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 import com.revrobotics.CANSparkMax;
+import com.revrobotics.CANSparkMax.ControlType;
+import com.revrobotics.CANSparkMax.IdleMode;
+import com.revrobotics.RelativeEncoder;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+import com.revrobotics.SparkMaxAbsoluteEncoder.Type;
+import com.revrobotics.SparkMaxAbsoluteEncoder;
+import com.revrobotics.SparkMaxRelativeEncoder;
+
+import javax.management.RuntimeErrorException;
+
 import com.ctre.phoenix.motorcontrol.ControlMode;
+import com.ctre.phoenix.motorcontrol.SupplyCurrentLimitConfiguration;
 import com.ctre.phoenix.motorcontrol.can.TalonFX;
+import com.revrobotics.SparkMaxPIDController;
+
+import edu.wpi.first.wpilibj.PneumaticHub;
+import edu.wpi.first.wpilibj.DoubleSolenoid;
+
+
+
 /**
  * The VM is configured to automatically run this class, and to call the functions corresponding to
  * each mode, as described in the TimedRobot documentation. If you change the name of this class or
@@ -20,53 +40,118 @@ import com.ctre.phoenix.motorcontrol.can.TalonFX;
  * project.
  */
 public class Robot extends TimedRobot {
-  private static final String kDefaultAuto = "Default";
-  private static final String kCustomAuto = "My Auto";
-  private String m_autoSelected;
-  private final SendableChooser<String> m_chooser = new SendableChooser<>();
+  
+    private CANSparkMax mNETurnSparkMax;
+    private CANSparkMax mSETurnSparkMax;
+    private CANSparkMax mSWTurnSparkMax;
+    private CANSparkMax mNWTurnSparkMax;
 
-  private XboxController mController;
+    private CANSparkMax mIntakeLowerRollerSparkMax;
+    private CANSparkMax mIntakeUpperRollerSparkMax;
 
+    private CANSparkMax mArmLowerJointSparkMax;
+    private CANSparkMax mArmUpperJointSparkMax;
 
-  private double mStartTime;
-
-  private int[] mNeoIds;
-  private int[] mTalonIds;
-  private CANSparkMax[] mNeos;
-  private int mNeoIdIdx;
-
-  private TalonFX mTalon;
-
-  private boolean aPressed;
-  /**
-   * This function is run when the robot is first started up and should be used for any
-   * initialization code.
-   */
-  @Override
-  public void robotInit() {
-    m_chooser.setDefaultOption("Default Auto", kDefaultAuto);
-    m_chooser.addOption("My Auto", kCustomAuto);
-    SmartDashboard.putData("Auto choices", m_chooser);
-
-    mController = new XboxController(2);
+    private TalonFX mNEDriveFalcon;
+    private TalonFX mSEDriveFalcon;
+    private TalonFX mSWDriveFalcon;
+    private TalonFX mNWDriveFalcon;
     
-    mStartTime = System.currentTimeMillis();
+    private SparkMaxAbsoluteEncoder mNEEncoder;
+    private SparkMaxAbsoluteEncoder mSEEncoder;
+    private SparkMaxAbsoluteEncoder mSWEncoder;
+    private SparkMaxAbsoluteEncoder mNWEncoder;
 
-    mNeoIds = new int[] {0, 4, 15, 18};
-    mNeos = new CANSparkMax[mNeoIds.length];
-    for (int i = 0; i < mNeoIds.length; i++)
-    {
-      mNeos[i] = new CANSparkMax(mNeoIds[i], MotorType.kBrushless);
-    }
-    mNeoIdIdx = 0;
+    private SparkMaxAbsoluteEncoder mArmLowerEncoder;
+    private SparkMaxAbsoluteEncoder mArmUpperEncoder;
 
-    aPressed = false;
+    private PneumaticHub mPneumaticsHub; 
+
+    private DoubleSolenoid mIntakeSolenoid;
+    private DoubleSolenoid mLeftClawSolenoid;
+    private DoubleSolenoid mRightClawSolenoid;
+
+    private XboxController mController;
+
+  
+
+  public void robotInit()
+  {
+    
+      mNETurnSparkMax = InitializeTurnSparkMax(17);
+      mSETurnSparkMax = InitializeTurnSparkMax(15);
+      mSWTurnSparkMax = InitializeTurnSparkMax(4);
+      mNWTurnSparkMax = InitializeTurnSparkMax(2);
+
+      mNEEncoder = mNETurnSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
+      mSEEncoder = mSETurnSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
+      mSWEncoder = mSWTurnSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
+      mNWEncoder = mNWTurnSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
 
 
-    mTalonIds = new int[] {2, 7, 12, 17};
-    mTalon = new TalonFX(mTalonIds[0]);
+      mIntakeLowerRollerSparkMax = InitializeIntakeSparkMax(3);
+      mIntakeUpperRollerSparkMax = InitializeIntakeSparkMax(16);
+
+      mArmLowerJointSparkMax = InitializeArmSparkMax(14);
+      mArmUpperJointSparkMax = InitializeArmSparkMax(13);
+
+      mArmLowerEncoder = mArmLowerJointSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
+      mArmUpperEncoder = mArmUpperJointSparkMax.getAbsoluteEncoder(Type.kDutyCycle);
+
+      mNEDriveFalcon = InitializeDriveFalcon(19);
+      mSEDriveFalcon = InitializeDriveFalcon(18);
+      mSWDriveFalcon = InitializeDriveFalcon(1);
+      mNWDriveFalcon = InitializeDriveFalcon(2);
+
+      mPneumaticsHub = new PneumaticHub(31);
+
+      mIntakeSolenoid = mPneumaticsHub.makeDoubleSolenoid(10,13);
+      mLeftClawSolenoid = mPneumaticsHub.makeDoubleSolenoid(11,14);
+      mLeftClawSolenoid = new DoubleSolenoid(1 ,PneumaticsModuleType.REVPH,12,15);
+
+
+      mController = new XboxController(0);
   }
 
+  private CANSparkMax InitializeTurnSparkMax(int pCANId)
+  {
+    CANSparkMax returnValue = new CANSparkMax(pCANId, MotorType.kBrushless);
+    returnValue.restoreFactoryDefaults();
+    returnValue.setSmartCurrentLimit(20);
+    returnValue.getPIDController().setFeedbackDevice(returnValue.getAbsoluteEncoder(Type.kDutyCycle));
+    returnValue.burnFlash();
+    
+    return returnValue;
+  }
+
+  private CANSparkMax InitializeIntakeSparkMax(int pCANId)
+  {
+    CANSparkMax returnValue = new CANSparkMax(pCANId, MotorType.kBrushless);
+    returnValue.restoreFactoryDefaults();
+    returnValue.setSmartCurrentLimit(20);
+    returnValue.burnFlash();
+    return returnValue;
+    
+  }
+
+  private CANSparkMax InitializeArmSparkMax(int pCANId)
+  {
+    
+    CANSparkMax returnValue = new CANSparkMax(pCANId, MotorType.kBrushless);
+    returnValue.restoreFactoryDefaults();
+    returnValue.setSmartCurrentLimit(40);
+    returnValue.getPIDController().setFeedbackDevice(returnValue.getAbsoluteEncoder(Type.kDutyCycle));
+    returnValue.burnFlash();
+    
+    return returnValue;
+  }
+
+  private TalonFX InitializeDriveFalcon(int pCANId)
+  {
+    TalonFX returnValue = new TalonFX(pCANId);
+    returnValue.configSupplyCurrentLimit(new SupplyCurrentLimitConfiguration(true, 40, 60, 2));
+    return returnValue;
+  }
   /**
    * This function is called every 20 ms, no matter the mode. Use this for items like diagnostics
    * that you want ran during disabled, autonomous, teleoperated and test.
@@ -75,7 +160,86 @@ public class Robot extends TimedRobot {
    * SmartDashboard integrated updating.
    */
   @Override
-  public void robotPeriodic() {}
+  public void robotPeriodic() 
+  {
+    SmartDashboard.putNumber("mNEEncoder", mNEEncoder.getPosition());
+    SmartDashboard.putNumber("mSEEncoder", mSEEncoder.getPosition());
+    SmartDashboard.putNumber("mSWEncoder", mSWEncoder.getPosition());
+    SmartDashboard.putNumber("mNWEncoder", mNWEncoder.getPosition());
+
+    SmartDashboard.putNumber("mArmLowerEncoder", mArmLowerEncoder.getPosition());
+    SmartDashboard.putNumber("mArmUpperEncoder", mArmUpperEncoder.getPosition());   
+
+
+  }
+
+  private void TestFalconControl(TalonFX pTalonFX, boolean pRun)
+  {
+    if(pRun)
+    {
+      pTalonFX.set(ControlMode.PercentOutput, 0.1);
+    }
+    else
+    {
+      pTalonFX.set(ControlMode.PercentOutput, 0);
+    }
+  }
+
+
+  private void TestSparkMaxControl(CANSparkMax pSparkMax, boolean pRun)
+  {
+    if(pRun)
+    {
+      pSparkMax.set(0.1);
+    }
+    else
+    {
+      pSparkMax.set(0);
+    }
+  }
+
+  private void TestPneumaticsMaxControl(DoubleSolenoid pSolenoid, boolean pRun)
+  {
+    if(pRun)
+    {
+      pSolenoid.set(DoubleSolenoid.Value.kForward);
+    }
+    else
+    {
+      pSolenoid.set(DoubleSolenoid.Value.kReverse);
+    }
+  }
+
+  public void teleopPeriodic()
+  {
+    if (!mController.getLeftBumper())
+      {
+      TestFalconControl(mNEDriveFalcon, mController.getStartButton() && mController.getYButton());
+      TestFalconControl(mSEDriveFalcon, mController.getStartButton() && mController.getBButton());
+      TestFalconControl(mSWDriveFalcon, mController.getStartButton() && mController.getAButton());
+      TestFalconControl(mNWDriveFalcon, mController.getStartButton() && mController.getXButton());
+
+      TestSparkMaxControl(mNETurnSparkMax, !mController.getStartButton() && mController.getYButton());
+      TestSparkMaxControl(mSETurnSparkMax, !mController.getStartButton() && mController.getBButton());
+      TestSparkMaxControl(mSWTurnSparkMax, !mController.getStartButton() && mController.getAButton());
+      TestSparkMaxControl(mNWTurnSparkMax, !mController.getStartButton() && mController.getXButton());
+    }
+    else
+    {
+      TestPneumaticsMaxControl(mIntakeSolenoid,  mController.getYButton());
+      TestPneumaticsMaxControl(mLeftClawSolenoid, mController.getBButton());
+      TestPneumaticsMaxControl(mRightClawSolenoid, mController.getAButton());
+    }
+    TestSparkMaxControl(mArmLowerJointSparkMax, mController.getRightTriggerAxis() > 0.5);
+    TestSparkMaxControl(mArmUpperJointSparkMax, mController.getLeftTriggerAxis() > 0.5);
+
+    TestSparkMaxControl(mIntakeLowerRollerSparkMax, mController.getLeftBumper());
+    TestSparkMaxControl(mIntakeUpperRollerSparkMax, mController.getRightBumper());
+
+    
+
+
+  }
 
   /**
    * This autonomous (along with the chooser code above) shows how to select between different
@@ -89,64 +253,19 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousInit() {
-    m_autoSelected = m_chooser.getSelected();
-    // m_autoSelected = SmartDashboard.getString("Auto Selector", kDefaultAuto);
-    System.out.println("Auto selected: " + m_autoSelected);
   }
 
   /** This function is called periodically during autonomous. */
   @Override
   public void autonomousPeriodic() {
-    switch (m_autoSelected) {
-      case kCustomAuto:
-        // Put custom auto code here
-        break;
-      case kDefaultAuto:
-      default:
-        // Put default auto code here
-        break;
-    }
   }
 
   /** This function is called once when teleop is enabled. */
   @Override
-  public void teleopInit() {}
-
-  /** This function is called periodically during operator control. */
-  @Override
-  public void teleopPeriodic() {
-
-    SmartDashboard.putBoolean("A pressed", aPressed);
-    if (mController.getAButton()  && ! aPressed)
-    {
-      mNeos[mNeoIdIdx].setVoltage(0);
-      mNeoIdIdx = (mNeoIdIdx + 1) % (mNeoIds.length);
-      aPressed = true;
-    }
-    else
-    {
-      aPressed = false;
-    }    
-
-    if (mController.getBButton())
-    {
-      mNeos[mNeoIdIdx].setVoltage(1);
-    }
-    else
-    {
-      mNeos[mNeoIdIdx].setVoltage(0);
-    }
-    SmartDashboard.putNumber("Time",System.currentTimeMillis() - mStartTime);
-    SmartDashboard.putNumber("Current Motor", mNeoIds[mNeoIdIdx]);
+  public void teleopInit() {
+ 
+  } 
     
-
-    if (mController.getXButton()){
-      mTalon.set(ControlMode.Velocity, 65);
-    }
-    else{
-      mTalon.set(ControlMode.Velocity, 0);
-    }
-  }
 
   /** This function is called once when the robot is disabled. */
   @Override
